@@ -1,0 +1,40 @@
+ parameters:
+  jobName: ''
+  processId: '' 
+  runtimeId: ''
+  shouldForceFail: ''
+  dependsOn: []
+ jobs:
+  - job: ${{ parameters.jobName }}
+    dependsOn: ${{ parameters.dependsOn }}
+    steps:
+      #=========================================================================
+      # Executes the process on the specified runtime
+      #=========================================================================   
+      - task: PowerShell@2
+        name: ExecuteProcess
+        inputs:
+          arguments:         
+            -processId ${{ parameters.processId }}
+            -runtimeId ${{ parameters.runtimeId }}
+            -shouldForceFail ${{ parameters.shouldForceFail }}
+          filePath: '$(System.DefaultWorkingDirectory)\ps\ExecuteProcess.ps1'
+      - script: 
+          echo ExecuteProcess URL $(ExecuteProcess.recordUrl) `n
+          echo Sleeping for a bit `n
+      - pwsh:      
+          Start-Sleep -Seconds 10 #todo - smaller interval but loop until test finished
+      - script: 
+          echo Waking up now, will check the test results.  Later on we want to loop a few times, testing for results, then erroring after a threshold `n
+          
+      #=========================================================================
+      # Retrieves the results of the execution
+      #=========================================================================   
+      - task: PowerShell@2
+        name: GetExecutionRecordResults
+        inputs:
+          arguments:         
+            -resultUrl $(ExecuteProcess.recordUrl)
+          filePath: '$(System.DefaultWorkingDirectory)\ps\GetExecutionRecordResults.ps1'
+      - script: 
+          echo Test Result $(GetExecutionRecordResults.boomiTestStatus)

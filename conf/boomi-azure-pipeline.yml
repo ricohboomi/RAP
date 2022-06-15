@@ -1,0 +1,117 @@
+stages:
+  - stage: DevToUAT
+    variables:
+      sourceEnv: 4ec1a2c7-721a-4103-abf3-a40db9732a16 #DEV
+      targetEnv: e3c8de1c-0afe-4f39-8e66-790eecdbcd7d #UAT
+      sourceRuntime: 416c12c5-a2f0-475e-b583-deaeb1e97c28 #The source runtime to run the test suite on  
+      componentId: 853a188b-e655-4878-b8ea-97f6bd787d8c #The actual component(s) to deploy - API, WS
+      testComponentId: d2786a3c-03b4-4238-a9d6-15447fa1ed5a #The boomi test suite(s) to run
+      notes: "Test Notes"#make this a variable in the UI?
+      version: $(Get-Date -Format yyMMddhhmmss) #replace this with latest version from API
+      shouldForceFail: 0
+    pool:
+      vmImage: 'windows-latest' #use the free azure VM, but can be changed to any Azure pool    
+    
+    ##########################################################################
+    # Jobs
+    ##########################################################################  
+    jobs:
+    #=====================================================================================================
+    # Create and deploy the main package for the specified components
+    #=====================================================================================================
+    - ${{ if eq(1, 1) }}:
+      - template: templates/deploy-package.yml
+        parameters:
+            jobName: DeployMainPackage
+            componentId: $(componentId)
+            version: $(version)
+            destinationEnv: $(sourceEnv)
+            notes: $(notes)   
+            
+    #=====================================================================================================
+    # Run code coverage tests here, e.g. SonarQube
+    # See https://community.boomi.com/s/article/Boomi-CI-CD-Reference-Implementation?t=1614031522663
+    #=====================================================================================================
+       
+    #=====================================================================================================
+    # Depending on how APIM is deployed, add a job/template here, and setup dependencies
+    # See https://azure.microsoft.com/en-au/blog/build-a-ci-cd-pipeline-for-api-management/
+    #===================================================================================================== 
+       
+    #=====================================================================================================
+    # Create and deploy the test package for the specified test suite component
+    #=====================================================================================================
+    - ${{ if eq(1, 1) }}:
+      - template: templates/deploy-package.yml 
+        parameters:
+            jobName: DeployTestPackage
+            componentId: $(testComponentId)
+            version: $(version)
+            destinationEnv: $(sourceEnv)
+            notes: Deploying Test Package. $(notes)   
+            dependsOn: DeployMainPackage    
+    
+    #=====================================================================================================
+    # Run the test package and get results
+    #=====================================================================================================
+      - ${{ if eq(1, 1) }}:
+        - template: templates/execute-boomi-tests.yml 
+          parameters:
+              jobName: ExecuteBoomiTests
+              processId: $(testComponentId)
+              runtimeId: $(sourceRuntime)
+              shouldForceFail: $(shouldForceFail)   
+              boomiTestStatus: ''
+              dependsOn: DeployTestPackage    
+        - job: Debug
+          dependsOn: ExecuteBoomiTests
+          variables: 
+            boomiTestStatus: $[ dependencies.ExecuteBoomiTests.outputs['GetExecutionRecordResults.boomiTestStatus'] ]
+          steps: 
+          - script: 
+              echo "boomiTestStatus is $(boomiTestStatus)"
+              
+        
+        #=====================================================================================================
+        # If ExecuteBoomiTests fails, ...
+        #=====================================================================================================    
+        - job: TestsFailed
+          dependsOn: ExecuteBoomiTests
+          condition: eq(dependencies.ExecuteBoomiTests.outputs['GetExecutionRecordResults.boomiTestStatus'], 'ERROR') 
+          steps:
+            - script: 
+                echo Job failed #And do other things here as required                   
+          
+        #=====================================================================================================
+        # If ExecuteBoomiTests passes, promote the package to the target env
+        #=====================================================================================================  
+        - job: TestsPassedPromoteMainPackage
+          dependsOn: 
+          - ExecuteBoomiTests
+          - DeployMainPackage
+          condition: eq(dependencies.ExecuteBoomiTests.outputs['GetExecutionRecordResults.boomiTestStatus'], 'COMPLETE') 
+          variables: 
+            packageId: $[ dependencies.DeployMainPackage.outputs['CreatePackagedComponent.packageId'] ]
+          steps:    
+            - script: 
+                echo Job Succeeded, deploying to Target Env
+            - task: PowerShell@2
+              name: PromoteDeployedPackage
+              inputs:
+                arguments:         
+                  -packageId $(packageId)
+                  -destinationEnv $(targetEnv)
+                  -notes $(notes)
+                filePath: '$(System.DefaultWorkingDirectory)\ps\CreateDeployedPackage.ps1'
+                
+                
+        #=====================================================================================================
+        # Run performance tests here? e.g. jmeter
+        # See https://www.colinsalmcorner.com/executing-jmeter-tests-in-an-azure-pipeline/
+        # 
+        #=====================================================================================================
+                  
+
+  
+
+      

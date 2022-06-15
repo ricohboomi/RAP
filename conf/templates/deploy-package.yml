@@ -1,0 +1,34 @@
+ parameters:
+  jobName: ''
+  componentId: '' 
+  version: ''
+  destinationEnv: ''
+  notes: ''
+  dependsOn: []
+ jobs:  
+  - job: ${{ parameters.jobName }}
+    dependsOn: ${{ parameters.dependsOn }}
+    steps: 
+    #=========================================================================
+    # Creates a PackagedComponent for the component we want deployed
+    #=========================================================================   
+    - task: PowerShell@2
+      name: CreatePackagedComponent
+      inputs:
+        arguments:         
+          -componentId ${{ parameters.componentId }} 
+          -version $(version)
+        filePath: '$(System.DefaultWorkingDirectory)\ps\CreatePackagedComponent.ps1'
+    - script: echo PackageId Is $(CreatePackagedComponent.packageId)      
+    
+  #=========================================================================
+  # Deploys the PackagedComponent created above to the destination env
+  #=========================================================================   
+    - task: PowerShell@2
+      name: CreateDeployedPackage
+      inputs:
+        arguments: #how do these work as vars above?        
+          -packageId $(CreatePackagedComponent.packageId)
+          -destinationEnv ${{ parameters.destinationEnv }} 
+          -notes ${{ parameters.notes }}
+        filePath: '$(System.DefaultWorkingDirectory)\ps\CreateDeployedPackage.ps1'
